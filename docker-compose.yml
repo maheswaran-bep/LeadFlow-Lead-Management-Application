@@ -1,0 +1,99 @@
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: leadflow-postgres
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    networks:
+      - leadflow-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+
+    container_name: leadflow-backend
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    expose:
+      - "8000"
+
+    networks:
+      - leadflow-network
+
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL}
+
+    container_name: leadflow-frontend
+    restart: unless-stopped
+
+    expose:
+      - "80"
+
+    depends_on:
+      - backend
+
+    networks:
+      - leadflow-network
+
+
+  nginx:
+    image: nginx:alpine
+    container_name: leadflow-nginx
+    restart: unless-stopped
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+    depends_on:
+      - frontend
+      - backend
+
+    networks:
+      - leadflow-network
+
+
+volumes:
+  postgres_data:
+
+
+networks:
+  leadflow-network:
+    driver: bridge
